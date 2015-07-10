@@ -17,9 +17,9 @@ struct timespec diff(struct timespec start, struct timespec end)
   return temp;
 }
 
-long int get_execution_time() {
+uint64_t get_execution_time() {
 	struct timespec delta = diff(time1,time2);
-	return (long int) (GIG * delta.tv_sec + delta.tv_nsec);
+	return (uint64_t) (GIG * (uint64_t) delta.tv_sec + (uint64_t) delta.tv_nsec);
 }
 
 void print_matrix(int N, float *a) {
@@ -123,9 +123,9 @@ void SOR_blocked(float* data, int length)
   }
 }
 
-void print_metrics(int N, long int run_time) {
+void print_metrics(int N, uint64_t run_time) {
   double ns_per_element = (double) run_time / (double) (N*N);
-  printf("\nTotal time: %ld ns", run_time);
+  printf("\nTotal time: %lld ns", run_time);
   printf("\n%f ns per element. (N=%d)\n", ns_per_element, N);
 }
 

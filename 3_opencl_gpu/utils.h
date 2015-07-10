@@ -31,8 +31,8 @@ typedef struct Image_struct {
 #define tick()	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1)
 #define tock()	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2)
 
-long int get_execution_time();
-void print_metrics(int N, long int run_time);
+uint64_t get_execution_time();
+void print_metrics(int N, uint64_t run_time);
 
 char* getKernelSource(char *filename);
 
