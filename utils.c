@@ -78,13 +78,15 @@ void init_image(PixMatrix *img, int32_t ox, int32_t oy, int32_t dx, int32_t dy, 
   img->dim.y = dy;
 }
 
-void init_matrix(int N, float *matrix) {
+void init_matrix(int N, uint16_t *matrix) {
     int ii, jj;
+    int data;
     //Initialize with random float values
     srand(0xdeadbeef);
-    for(ii==0; ii<N; ii++)
+    for(ii=0; ii<N; ii++)
         for(jj=0; jj<N; jj++) {
-            matrix[ii*N + jj] = (float) rand() / (float) RAND_MAX * MAX_VALUE;
+            data = rand();
+            matrix[ii*N + jj] = (uint16_t) (data % 0x0000ffff);
         }
 }
 
@@ -145,4 +147,35 @@ void check_results(uint16_t *host, uint16_t *device, int N) {
     }
   }
   printf("%d errors detected\n", error_count);
+}
+
+void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y) {
+  uint32_t ii, jj;
+  uint32_t iii, jjj;
+  double px;
+  Point ko;
+  float *kernel = (float*) h.px;  //bad bad hack
+
+  for(ii=0; ii<x.dim.y; ii++) {
+    for(jj=0; jj<x.dim.x; jj++) {
+      ko.x = jj - h.orig.x;
+      ko.y = ii - h.orig.y;
+      px = 0;
+      for(iii=0; iii<h.dim.y; iii++) {
+        for(jjj=0; jjj<h.dim.x; jjj++) {
+          if(((ko.y+iii) < 0) || ((ko.y+iii) >= x.dim.y) || 
+            ((ko.x+jjj) < 0) || ((ko.x+jjj) >= x.dim.x)) {
+            //For now, boundary elements take on the value of the origin
+            px += x.px[(ko.y+h.orig.y)*x.dim.x + (ko.x+h.orig.x)]*kernel[iii*h.dim.x+jjj];
+          }
+          else {
+            px += x.px[(ko.y+iii)*x.dim.x + (ko.x+jjj)]*kernel[iii*h.dim.x+jjj];
+          }
+        }
+      }
+      px = px < 0 ? 0 : px;
+      px = px > 65535 ? 65535 : px;
+      y.px[ii*x.dim.x+jj] = (uint16_t) px;
+    }
+  }
 }

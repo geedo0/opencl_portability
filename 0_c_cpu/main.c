@@ -2,11 +2,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
+
+#ifdef USE_MAGICK
 #include <wand/MagickWand.h>
-#include "utils.h"
+#endif
 
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y);
+#include "../utils.h"
 
+#ifdef USE_MAGICK
 #define ThrowWandException(wand) \
 { \
   char \
@@ -20,8 +23,13 @@ void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y);
   description=(char *) MagickRelinquishMemory(description); \
   exit(-1); \
 }
+#endif
 
+#ifdef USE_MAGICK
 #define N     1024
+#else
+#define N     16000
+#endif
 
 //Bottom Sobel
 float input_kernel[] = {
@@ -34,6 +42,7 @@ uint16_t input_image[N*N];
 uint16_t output_image[N*N];
 
 int main(int argc,char **argv) {
+  #ifdef USE_MAGICK
   MagickBooleanType
     status;
 
@@ -60,6 +69,7 @@ int main(int argc,char **argv) {
 
   ssize_t
     y;
+  #endif
 
   int ii, jj;
 
@@ -69,10 +79,11 @@ int main(int argc,char **argv) {
   init_image(&kernel, 1, 1, 3, 3, (uint16_t*) input_kernel);
   init_image(&output, 1, 1, N, N, output_image);
 
+  #ifdef USE_MAGICK
   if (argc != 3)
     {
       (void) fprintf(stdout,"Usage: %s input output\n",argv[0]);
-      exit(0);
+      exit(1);
     }
 
   /*
@@ -105,12 +116,32 @@ int main(int argc,char **argv) {
     ThrowWandException(image_wand);
   iterator = DestroyPixelIterator(iterator);
   image_wand = DestroyMagickWand(image_wand);
-  
+  #else
+  //Initialize with random data
+  init_matrix(N, input.px);
+  #endif
+
   /*
     Modify the image buffer
   */
+  #ifdef USE_MAGICK
+  tick();
   convolve_image(input, kernel, output);
+  tock();
+  print_metrics(N, get_execution_time());
+  #else
+  printf("length, time (ns)\n");
+  for(ii=100; ii<=16000; ii+=100) {
+    input.dim.x = ii;
+    input.dim.y = ii;
+    tick();
+    convolve_image(input, kernel, output);
+    tock();
+    printf("%d, %lld\n", ii, get_execution_time());
+  }
+  #endif
 
+  #ifdef USE_MAGICK
   /*
     Write back the modified image buffer
   */
@@ -143,36 +174,7 @@ int main(int argc,char **argv) {
     ThrowWandException(image_wand);
   modified_wand = DestroyMagickWand(modified_wand);
   MagickWandTerminus();
+  #endif
+
   return(0);
-}
-
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y) {
-  uint32_t ii, jj;
-  uint32_t iii, jjj;
-  double px;
-  Point ko;
-  float *kernel = (float*) h.px;  //bad bad hack
-
-  for(ii=0; ii<x.dim.y; ii++) {
-    for(jj=0; jj<x.dim.x; jj++) {
-      ko.x = jj - h.orig.x;
-      ko.y = ii - h.orig.y;
-      px = 0;
-      for(iii=0; iii<h.dim.y; iii++) {
-        for(jjj=0; jjj<h.dim.x; jjj++) {
-          if(((ko.y+iii) < 0) || ((ko.y+iii) >= x.dim.y) || 
-            ((ko.x+jjj) < 0) || ((ko.x+jjj) >= x.dim.x)) {
-            //For now, boundary elements take on the value of the origin
-            px += x.px[(ko.y+h.orig.y)*x.dim.x + (ko.x+h.orig.x)]*kernel[iii*h.dim.x+jjj];
-          }
-          else {
-            px += x.px[(ko.y+iii)*x.dim.x + (ko.x+jjj)]*kernel[iii*h.dim.x+jjj];
-          }
-        }
-      }
-      px = px < 0 ? 0 : px;
-      px = px > 65535 ? 65535 : px;
-      y.px[ii*x.dim.x+jj] = (uint16_t) px;
-    }
-  }
 }

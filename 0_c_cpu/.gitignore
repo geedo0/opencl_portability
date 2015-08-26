@@ -1,3 +1,2 @@
-*.o
-*.png
-convolve
+convolve_image
+convolve_matrix

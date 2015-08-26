@@ -10,15 +10,13 @@
 #include <CL/cl.h>
 #endif
 
-#include "err_code.h"
-#include "device_picker.h"
-#include "utils.h"
+#include "../err_code.h"
+#include "../device_picker.h"
+#include "../utils.h"
 
 #ifdef USE_MAGICK
 #include <wand/MagickWand.h>
 #endif
-
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y);
 
 #ifdef USE_MAGICK
 #define ThrowWandException(wand) \
@@ -36,7 +34,11 @@ void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y);
 }
 #endif
 
+#ifdef USE_MAGICK
 #define N     1024
+#else
+#define N     16000
+#endif
 
 //Bottom Sobel
 float input_kernel[] = {
@@ -226,33 +228,37 @@ int main(int argc,char **argv) {
 
     printf("\n===== OpenCL Convolution ======\n");
 
-    tick();
-    const size_t global[2] = {N, N};
-    const size_t local[2] = {16,16};
+    size_t global[2];
+    size_t local[2] = {54,54};
+    printf("length, time (ns)\n");
+    for(ii=100; ii<=16000; ii+=100) {
+		jj = ii - (ii%54);
+		global[0] = jj;
+		global[1] = jj;
+		
+		tick();
+		err =  clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_input_image);
+		err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_output_image);
+		err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &d_kernel);
+		checkError(err, "Setting kernel args");
+		err = clEnqueueNDRangeKernel(
+			commands,
+			kernel,
+			2, NULL,
+			&global, &local,
+			0, NULL, NULL);
+		checkError(err, "Enqueueing kernel");
+		err = clFinish(commands);
+		checkError(err, "Waiting for kernel to finish");
+		tock();
 
-    err =  clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_input_image);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_output_image);
-    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &d_kernel);
-    checkError(err, "Setting kernel args");
-    err = clEnqueueNDRangeKernel(
-        commands,
-        kernel,
-        2, NULL,
-        &global, &local,
-        0, NULL, NULL);
-    checkError(err, "Enqueueing kernel");
-    err = clFinish(commands);
-    checkError(err, "Waiting for kernel to finish");
-    tock();
-
-    err = clEnqueueReadBuffer(
-        commands, d_output_image, CL_TRUE, 0,
-        sizeof(uint16_t) * numElements, output_image,
-        0, NULL, NULL);
-    checkError(err, "Reading back image");
-    
-    print_metrics(N, get_execution_time());
-    //check_results(h_A, h_result, N);
+		err = clEnqueueReadBuffer(
+			commands, d_output_image, CL_TRUE, 0,
+			sizeof(uint16_t) * numElements, output_image,
+			0, NULL, NULL);
+			checkError(err, "Reading back image");
+		printf("%d, %lld\n",jj, get_execution_time());
+    }
 
 //--------------------------------------------------------------------------------
 // Clean up!
@@ -302,35 +308,4 @@ int main(int argc,char **argv) {
 
 
   return EXIT_SUCCESS;
-}
-
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y) {
-  uint32_t ii, jj;
-  uint32_t iii, jjj;
-  double px;
-  Point ko;
-  float *kernel = (float*) h.px;  //bad bad hack
-
-  for(ii=0; ii<x.dim.y; ii++) {
-    for(jj=0; jj<x.dim.x; jj++) {
-      ko.x = jj - h.orig.x;
-      ko.y = ii - h.orig.y;
-      px = 0;
-      for(iii=0; iii<h.dim.y; iii++) {
-        for(jjj=0; jjj<h.dim.x; jjj++) {
-          if(((ko.y+iii) < 0) || ((ko.y+iii) >= x.dim.y) || 
-            ((ko.x+jjj) < 0) || ((ko.x+jjj) >= x.dim.x)) {
-            //For now, boundary elements take on the value of the origin
-            px += x.px[(ko.y+h.orig.y)*x.dim.x + (ko.x+h.orig.x)]*kernel[iii*h.dim.x+jjj];
-          }
-          else {
-            px += x.px[(ko.y+iii)*x.dim.x + (ko.x+jjj)]*kernel[iii*h.dim.x+jjj];
-          }
-        }
-      }
-      px = px < 0 ? 0 : px;
-      px = px > 65535 ? 65535 : px;
-      y.px[ii*x.dim.x+jj] = (uint16_t) px;
-    }
-  }
 }

@@ -10,59 +10,8 @@ extern "C" {
 }
 #endif
 
-struct timespec time1, time2;
-
-struct timespec diff(struct timespec start, struct timespec end)
-{
-  struct timespec temp;
-  if ((end.tv_nsec-start.tv_nsec)<0) {
-    temp.tv_sec = end.tv_sec-start.tv_sec-1;
-    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-  } else {
-    temp.tv_sec = end.tv_sec-start.tv_sec;
-    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-  }
-  return temp;
-}
-
-#define GIG 1000000000
-
-long int get_execution_time() {
-  struct timespec delta = diff(time1,time2);
-  return (long int) (GIG * delta.tv_sec + delta.tv_nsec);
-}
-
-#define tick()  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1)
-#define tock()  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2)
-
-typedef struct Point_struct {
-  int32_t x;
-  int32_t y;
-} Point;
-
-typedef struct Image_struct {
-  uint16_t *px;
-  Point dim;
-  Point orig;
-} PixMatrix;
-
-void init_matrix(int N, uint16_t *matrix) {
-    int ii, jj;
-    //Initialize with random integers
-    srand(0xdeadbeef);
-    for(ii==0; ii<N; ii++)
-        for(jj=0; jj<N; jj++) {
-            matrix[ii*N + jj] =  rand() % 0x0000ffff;
-        }
-}
-
-void print_metrics(int N, long int run_time) {
-  double ns_per_element = (double) run_time / (double) (N*N);
-  printf("\nTotal time: %ld ns", run_time);
-  printf("\n%f ns per element. (N=%d)\n", ns_per_element, N);
-}
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y);
-void parseArguments(int argc, char *argv[], char **input_file, char **output_file);
+#include "../utils.h"
+#include "../utils.c"
 
 #ifdef USE_MAGICK
 #define ThrowWandException(wand) \
@@ -80,6 +29,19 @@ void parseArguments(int argc, char *argv[], char **input_file, char **output_fil
 }
 #endif
 
+void parseArguments(int argc, char *argv[], char **input_file, char **output_file)
+{
+  for (int i = 1; i < argc; i++)
+  {
+    if(!strcmp(argv[i], "-if")) {
+      *input_file = argv[++i];
+    }
+    else if(!strcmp(argv[i], "-of")) {
+      *output_file = argv[++i];
+    }
+  }
+}
+
 // Assertion to check for errors
 //Wraps around CUDA function and terminates when an error is detected
 #define CUDA_SAFE_CALL(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -92,9 +54,14 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
   }
 }
 
+#ifdef USE_MAGICK
 #define N   1024
+#else
+#define N 16000
+#endif
 #define CONV_N  3
-__global__ void kernel_conv(uint16_t *x, uint16_t *y, float *h) {
+
+__global__ void kernel_conv(uint16_t *x, uint16_t *y, int16_t *h) {
   //BlockDim = dimensions of block in threads
   //GridDim = dimensions of grid in blocks
   //BlockIdx = position w/n grid
@@ -103,7 +70,7 @@ __global__ void kernel_conv(uint16_t *x, uint16_t *y, float *h) {
   const int jj = blockDim.x*blockIdx.x + threadIdx.x;
 
     int iii, jjj;
-    float px;
+    int32_t px;
     int o_x, o_y;
     //Set the new origin
     o_x = jj - 1;
@@ -114,10 +81,10 @@ __global__ void kernel_conv(uint16_t *x, uint16_t *y, float *h) {
       if(((o_y+iii) < 0) || ((o_y+iii) >= N) || 
         ((o_x+jjj) < 0) || ((o_x+jjj) >= N)) {
         //For now, boundary elements take on the value of the origin
-        px += ((float) x[(o_y+1)*N + (o_x+1)])*h[iii*CONV_N+jjj];
+        px += ((int32_t) x[(o_y+1)*N + (o_x+1)])*h[iii*CONV_N+jjj];
       }
       else {
-        px += ((float) x[(o_y+iii)*N + (o_x+jjj)])*h[iii*CONV_N+jjj];
+        px += ((int32_t) x[(o_y+iii)*N + (o_x+jjj)])*h[iii*CONV_N+jjj];
       }
     }
     }
@@ -126,18 +93,8 @@ __global__ void kernel_conv(uint16_t *x, uint16_t *y, float *h) {
     y[ii*N+jj] = (uint16_t) px;
 }
 
-
-void init_image(PixMatrix *img, int32_t ox, int32_t oy, int32_t dx, int32_t dy, uint16_t *px) {
-  img->px = px;
-  img->orig.x = ox;
-  img->orig.y = oy;
-  img->dim.x = dx;
-  img->dim.y = dy;
-}
-
-
 //Bottom Sobel
-float input_kernel[] = {
+int16_t input_kernel[] = {
   -1,-2,-1,
   0,0,0,
   1,2,1
@@ -185,13 +142,12 @@ int main(int argc,char **argv) {
   init_image(&image_kernel, 1, 1, 3, 3, (uint16_t*) input_kernel);
   init_image(&output, 1, 1, N, N, output_image);
 
+  #ifdef USE_MAGICK
   char *input_file=NULL, *output_file=NULL;
   parseArguments(argc, argv, &input_file, &output_file);
   if((input_file==NULL) || (output_file==NULL)) {
     exit(1);
   }
-
-  #ifdef USE_MAGICK
   /*
     Read an image.
   */
@@ -228,14 +184,14 @@ int main(int argc,char **argv) {
   
   //CUDA Boiler Plate
   uint16_t *d_input_image, *d_output_image;
-  float *d_kernel;
+  int16_t *d_kernel;
   size_t allocSize = numElements * sizeof(uint16_t);
   CUDA_SAFE_CALL(cudaMalloc((void **)&d_input_image, allocSize));
   CUDA_SAFE_CALL(cudaMalloc((void **)&d_output_image, allocSize));
-  CUDA_SAFE_CALL(cudaMalloc((void **)&d_kernel, 9*sizeof(float)));
+  CUDA_SAFE_CALL(cudaMalloc((void **)&d_kernel, 9*sizeof(int16_t)));
 
   CUDA_SAFE_CALL(cudaMemcpy(d_input_image, input_image, allocSize, cudaMemcpyHostToDevice));
-  CUDA_SAFE_CALL(cudaMemcpy(d_kernel, input_kernel, 9*sizeof(float), cudaMemcpyHostToDevice));
+  CUDA_SAFE_CALL(cudaMemcpy(d_kernel, input_kernel, 9*sizeof(int16_t), cudaMemcpyHostToDevice));
 
   /*
     Modify the image buffer
@@ -251,7 +207,6 @@ int main(int argc,char **argv) {
     convolve_image(input, image_kernel, output);
     tock();
 
-
     for(ii=0; ii<10; ii++)
       printf("%d, ",output_image[ii]);
     printf("\n");
@@ -262,23 +217,20 @@ int main(int argc,char **argv) {
 // CUDA Convolution
 //--------------------------------------------------------------------------------
     printf("\n===== CUDA Convolution ======\n");
-
-    tick();
+	for(ii=100; ii <= N; ii+=100) {
+		jj = ii - (ii%16);
+		int32_t length = jj/16;
     dim3 DimBlock(16, 16, 1);
-    dim3 DimGrid(64,64,1);
+		dim3 DimGrid(length, length, 1);
+		tick();
     kernel_conv<<<DimGrid, DimBlock>>>(d_input_image, d_output_image, d_kernel);
     cudaDeviceSynchronize();
     tock();
 
     CUDA_SAFE_CALL(cudaPeekAtLastError());
     CUDA_SAFE_CALL(cudaMemcpy(output_image, d_output_image, allocSize, cudaMemcpyDeviceToHost));
-    print_metrics(N, get_execution_time());
-    //check_results(h_A, h_result, N);
-
-    for(ii=0; ii<10; ii++)
-      printf("%d, ",output_image[ii]);
-    printf("\n");
-
+		printf("%d, %lld\n", jj, get_execution_time());
+	}
 
 //--------------------------------------------------------------------------------
 // Clean up!
@@ -324,48 +276,4 @@ int main(int argc,char **argv) {
   #endif
 
   return EXIT_SUCCESS;
-}
-
-void convolve_image(PixMatrix x, PixMatrix h, PixMatrix y) {
-  int32_t ii, jj;
-  int32_t iii, jjj;
-  double px;
-  Point ko;
-  float *kernel = (float*) h.px;  //bad bad hack
-
-  for(ii=0; ii<x.dim.y; ii++) {
-    for(jj=0; jj<x.dim.x; jj++) {
-      ko.x = jj - h.orig.x;
-      ko.y = ii - h.orig.y;
-      px = 0;
-      for(iii=0; iii<h.dim.y; iii++) {
-        for(jjj=0; jjj<h.dim.x; jjj++) {
-          if(((ko.y+iii) < 0) || ((ko.y+iii) >= x.dim.y) || 
-            ((ko.x+jjj) < 0) || ((ko.x+jjj) >= x.dim.x)) {
-            //For now, boundary elements take on the value of the origin
-            px += x.px[(ko.y+h.orig.y)*x.dim.x + (ko.x+h.orig.x)]*kernel[iii*h.dim.x+jjj];
-          }
-          else {
-            px += x.px[(ko.y+iii)*x.dim.x + (ko.x+jjj)]*kernel[iii*h.dim.x+jjj];
-          }
-        }
-      }
-      px = px < 0 ? 0 : px;
-      px = px > 65535 ? 65535 : px;
-      y.px[ii*x.dim.x+jj] = (uint16_t) px;
-    }
-  }
-}
-
-void parseArguments(int argc, char *argv[], char **input_file, char **output_file)
-{
-  for (int i = 1; i < argc; i++)
-  {
-    if(!strcmp(argv[i], "-if")) {
-      *input_file = argv[++i];
-    }
-    else if(!strcmp(argv[i], "-of")) {
-      *output_file = argv[++i];
-    }
-  }
 }
