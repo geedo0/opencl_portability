@@ -1,8 +1,17 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stdint.h>
+#include <time.h>
+
+#define GIG 1000000000
 #define MINVAL   0.0
 #define MAXVAL  100.0
+
+extern struct timespec time1, time2;
+
+#define tick()	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1)
+#define tock()	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2)
 
 typedef float data_t;
 
@@ -23,6 +32,9 @@ typedef union {
   data_t d[VSIZE];
 } pack_t;
 
+uint64_t get_execution_time();
+void print_metrics(int N, uint64_t run_time);
+char* getKernelSource(char *filename);
 vec_ptr new_vec(long int len);
 data_t *get_vec_start(vec_ptr v);
 long int get_vec_length(vec_ptr v);
@@ -31,6 +43,6 @@ int init_vector(vec_ptr v, long int len);
 int init_vector_rand(vec_ptr v, long int len);
 int print_vector(vec_ptr v);
 double fRand(double fMin, double fMax);
-
+void initializeArray2D(float *arr, int len, int seed);
 
 #endif

@@ -1,10 +1,6 @@
-OBJECTS=cuda_test cuda_sor
-CC=nvcc
+OBJECTS=cuda_sor
 
 all: $(OBJECTS)
 
-cuda_test: cuda_test.cu
-	$(CC) -o $@ $^
-
 cuda_sor: cuda_sor.cu
-	$(CC) -O1 -lrt -lm -arch=sm_20 -o $@ $^
+	nvcc -O1 -lrt -lm -arch=sm_20 -o $@ $^

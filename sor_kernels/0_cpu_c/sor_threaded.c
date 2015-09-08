@@ -41,6 +41,7 @@ main(int argc, char *argv[])
   long int execution_times[9];
   int *iterations;
   void SOR(vec_ptr v, int *iterations);
+  void SOR_blocked(vec_ptr v, int *iterations, int b);
 
   long int i, j, k;
   long int acc;
@@ -133,6 +134,40 @@ void SOR(vec_ptr v, int *iterations)
     if(iters == MAX_ITERS) break;
   }
    *iterations = iters;
+}
+
+/* SOR w/ blocking */
+void SOR_blocked(vec_ptr v, int *iterations, int b)
+{
+  long int i, j, ii, jj;
+  long int length = get_vec_length(v);
+  data_t *data = get_vec_start(v);
+  double change, mean_change = 100;
+  int iters = 0;
+  while (((mean_change/(double)(length*length)) > (double)TOL) || 1) {
+    iters++;
+    mean_change = 0;
+    for (ii = 1; ii < length-1; ii+=b) 
+      for (jj = 1; jj < length-1; jj+=b)
+  for (i = ii; i < ii+b; i++)
+    for (j = jj; j < jj+b; j++) {
+      change = data[i*length+j] - .25 * (data[(i-1)*length+j] +
+                data[(i+1)*length+j] +
+                data[i*length+j+1] +
+                data[i*length+j-1]);
+      data[i*length+j] -= change * OMEGA;
+      if (change < 0){
+        change = -change;
+      }
+      mean_change += change;
+    }
+    if (abs(data[(length-2)*(length-2)]) > 10.0*(MAXVAL - MINVAL)) {
+      printf("\n PROBABLY DIVERGENCE iter = %d", iters);
+      break;
+    }
+  if(iters == MAX_ITERS) break;
+  }
+  *iterations = iters;
 }
  
 //Creates threads running the SOR solver using stripwise decomposition
