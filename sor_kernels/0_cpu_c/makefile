@@ -10,7 +10,7 @@ sor_optimizing: sor_optimizing.c $(COMMON)/utils.o
 	gcc -lm -lrt -O1 -o $@ -I$(COMMON) $^
 
 sor_threaded: sor_threaded.c $(COMMON)/utils.o
-	gcc -g -pthread -lm -lrt -O1 -o $@ -I$(COMMON) $^
+	gcc -pthread -lm -lrt -O1 -o $@ -I$(COMMON) $^
 
 $(COMMON)/utils.o: $(COMMON)/utils.c
 	gcc -c -O1 -o $@ $^

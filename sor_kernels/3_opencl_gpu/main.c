@@ -14,12 +14,12 @@
 #include "device_picker.h"
 #include "utils.h"
 
-#define N     2000
+#define N     20460
 
 float array_A[N*N];
 
 int main(int argc,char **argv) {
-  int ii, jj;
+  int ii, jj, kk;
 
   int numElements = N*N;
 
@@ -146,35 +146,38 @@ int main(int argc,char **argv) {
 
   size_t global[2];
   size_t local[2];
-  
-  for(jj=1; jj<=32; jj++) {
-    fprintf(stderr, "block %d\n",jj);
-    int this_size = N - (N%jj);
+
+  for(ii=0; ii<20; ii++) {
+    int this_size = 1023 + 1023*ii;
+    fprintf(stderr, "size %d\n", this_size);
     global[0] = this_size;
     global[1] = this_size;
-    local[0] = jj;
-    local[1] = jj;
+    local[0] = 31;
+    local[1] = 31;
     
-    tick();
-    //2000 SOR iterations, results of final iteration are stored on d_A
-    for(ii=0; ii < 1000; ii++) {
-      err = clEnqueueNDRangeKernel(
-        commands, kernel_a, 2, NULL,
-        &global, &local, 0, NULL, NULL);
-      checkError(err, "Enqueueing kernel_a");
-      err = clFinish(commands);
-      checkError(err, "Waiting for kernel_a to finish");
+    uint64_t acc = 0;
+    for(kk=0; kk < 10; kk++) {
+      tick();
+      for(jj=0; jj < 50; jj++) {
+        err = clEnqueueNDRangeKernel(
+          commands, kernel_a, 2, NULL,
+          (size_t *) &global, (size_t *) &local, 0, NULL, NULL);
+        checkError(err, "Enqueueing kernel_a");
+        err = clFinish(commands);
+        checkError(err, "Waiting for kernel_a to finish");
 
-      err = clEnqueueNDRangeKernel(
-        commands, kernel_b, 2, NULL,
-        &global, &local, 0, NULL, NULL);
-      checkError(err, "Enqueueing kernel_b");
-      err = clFinish(commands);
-      checkError(err, "Waiting for kernel_b to finish");
+        err = clEnqueueNDRangeKernel(
+          commands, kernel_b, 2, NULL,
+          (size_t *) &global, (size_t *) &local, 0, NULL, NULL);
+        checkError(err, "Enqueueing kernel_b");
+        err = clFinish(commands);
+        checkError(err, "Waiting for kernel_b to finish");
+      }
+      tock();
+      acc += get_execution_time();
     }
-    tock();
-    //length, block size, time
-    printf("%d, %d, %lld\n", this_size, jj, get_execution_time());
+    //length, time
+    printf("%d, %f\n", this_size, ((double) acc)/10 );
   }
 
   err = clEnqueueReadBuffer(

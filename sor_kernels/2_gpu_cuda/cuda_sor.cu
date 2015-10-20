@@ -7,7 +7,7 @@
 
 //#define DEBUG
 #define PRINT_TIME
-#define SM_ARR_LEN				2000	//Default array size can be specified on command line
+#define SM_ARR_LEN				5000	//Default array size can be specified on command line
 #define THREAD_DIM	125
 #define TOL						    .00001
 #define EPSILON					  .05
@@ -32,7 +32,8 @@ void initializeArray2D(float *arr, int len, int seed);
 void SOR_blocked(float* data, int length);
 
 __global__ void kernel_sor_1(int N, float* A, float* B);
-__global__ void kernel_sor_2(int N, float* A, float* B);
+__global__ void kernel_sor_no_branch(int N, float* A, float* B);
+__global__ void kernel_sor_shared_mem(int N, float* A, float* B);
 
 int main(int argc, char **argv){
 	struct timespec time1, time2, delta;
@@ -59,6 +60,7 @@ int main(int argc, char **argv){
 	else {
 		arrLen = SM_ARR_LEN;
 	}
+	arrLen += 2;
 
 	#ifdef DEBUG
 	printf("Length of the array = %d\n", arrLen);
@@ -76,9 +78,6 @@ int main(int argc, char **argv){
 	#ifdef DEBUG// Initialize the host arrays
 	printf("\nInitializing the arrays ...");
 	#endif
-  
-	// Arrays are initialized with a known seed for reproducability
-	initializeArray2D(h_input, arrLen, 2453);
 	
 	#ifdef DEBUG
 	printf("\t... done\n\n");
@@ -87,17 +86,22 @@ int main(int argc, char **argv){
 	#ifdef DEBUG
 	cudaPrintfInit();
 	#endif
-	
-	// Transfer the arrays to the GPU memory
-	CUDA_SAFE_CALL(cudaMemcpy(d_A, h_input, allocSize, cudaMemcpyHostToDevice));
   
-	for(j = 2; j <= 32; j++) {
-		unsigned int this_length = arrLen - (arrLen%j);
-		unsigned int this_grid = this_length / j;
+	for(j = 1000; j <= arrLen-2; j+= 100) {
+		// unsigned int this_length = j - (j%16) + 2;
+		// unsigned int this_grid = (this_length-2) / 16;
+		unsigned int this_length = j - (j%16);
+		unsigned int this_grid = (this_length) / 16;
+  
+		// Arrays are initialized with a known seed for reproducability
+		initializeArray2D(h_input, this_length, 2453);
+	
+		// Transfer the arrays to the GPU memory
+		CUDA_SAFE_CALL(cudaMemcpy(d_A, h_input, this_length*this_length*sizeof(float), cudaMemcpyHostToDevice));
 		
-		fprintf(stderr, "processing %d\n", j);
+		fprintf(stderr, "processing %d\n", this_length);
 		
-		dim3 DimBlock(j, j, 1);
+		dim3 DimBlock(16, 16, 1);
 		dim3 DimGrid(this_grid,this_grid,1);
 		
 		#ifdef PRINT_TIME
@@ -112,7 +116,7 @@ int main(int argc, char **argv){
 		for(i = 0; i < 1000; i++) {
 			kernel_sor_1<<<DimGrid, DimBlock>>>(this_length, d_A, d_B);
 			cudaDeviceSynchronize();
-			kernel_sor_2<<<DimGrid, DimBlock>>>(this_length, d_A, d_B);
+			kernel_sor_1<<<DimGrid, DimBlock>>>(this_length, d_B, d_A);
 			cudaDeviceSynchronize();
 		}
 
@@ -125,7 +129,7 @@ int main(int argc, char **argv){
 		cudaEventRecord(stop,0);
 		cudaEventSynchronize(stop);
 		cudaEventElapsedTime(&elapsed_gpu, start, stop);
-		printf("%d, %d, %f\n", this_length, j, elapsed_gpu);
+		printf("%d, %f\n", this_length, elapsed_gpu);
 		cudaEventDestroy(start);
 		cudaEventDestroy(stop);
 		#endif
@@ -310,34 +314,69 @@ __global__ void kernel_sor_1(int N, float* A, float* B) {
 	}
 }
 
-//B to A kernel
-//Dual to allow alternating input/output arrays
-__global__ void kernel_sor_2(int N, float* A, float* B) {
+__global__ void kernel_sor_no_branch(int N, float* A, float* B) {
 	//BlockDim = dimensions of block in threads
 	//GridDim = dimensions of grid in blocks
 	//BlockIdx = position w/n grid
 	//ThreadIdx = position w/n block
-	const int row = IMUL(blockDim.y, blockIdx.y) + threadIdx.y;
-	const int col = IMUL(blockDim.x, blockIdx.x) + threadIdx.x;
-	const int rowN = IMUL(blockDim.x, gridDim.x);
+	const int row = IMUL(blockDim.y, blockIdx.y) + threadIdx.y + 1;
+	const int col = IMUL(blockDim.x, blockIdx.x) + threadIdx.x + 1;
+	const int rowN = N;
 	const int tid = IMUL(rowN, row) + col;
 
 	#ifdef DEBUG
 	cuPrintf("bx: %d by: %d tx: %d ty: %d, row: %d, col: %d tid %d \n"
 		, blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, row, col, tid);
 	#endif
+	B[row*rowN+col] = (
+		A[row*rowN + col-1] +
+		A[row*rowN + col] +
+		A[row*rowN + col+1] +
+		A[(row-1)*rowN + col] +
+		A[(row+1)*rowN + col]) * .2;
+}
 
-	//If the row and col values are not boundary elements, compute the average
-	if(row > 0 && row < (N-1) && col > 0 && col < (N-1)) {
-		A[row*rowN+col] = (
-			B[row*rowN + col-1] +
-			B[row*rowN + col] +
-			B[row*rowN + col+1] +
-			B[(row-1)*rowN + col] +
-			B[(row+1)*rowN + col]) * .2;
+__global__ void kernel_sor_shared_mem(int N, float* A, float* B) {
+	//BlockDim = dimensions of block in threads
+	//GridDim = dimensions of grid in blocks
+	//BlockIdx = position w/n grid
+	//ThreadIdx = position w/n block
+	const int row = IMUL(blockDim.y, blockIdx.y) + threadIdx.y + 1;
+	const int col = IMUL(blockDim.x, blockIdx.x) + threadIdx.x + 1;
+	const int rowN = N;
+	const int tid = IMUL(rowN, row) + col;
+	float acc;
+	__shared__ float aTile[16][16];
+	aTile[threadIdx.y][threadIdx.x] = A[row*rowN + col];
+	__syncthreads();
+
+	if(threadIdx.x>0 && threadIdx.x<(blockDim.x-1) && threadIdx.y>0 && threadIdx.y<(blockDim.y-1)) {
+		acc = (
+			aTile[threadIdx.y][threadIdx.x+1]+
+			aTile[threadIdx.y][threadIdx.x]+
+			aTile[threadIdx.y][threadIdx.x-1]+
+			aTile[threadIdx.y+1][threadIdx.x]+
+			aTile[threadIdx.y-1][threadIdx.x]) * 0.2;
 	}
-	//else the element does not change
 	else {
-		A[row*rowN + col] = B[row*rowN + col];
+		float acc = aTile[threadIdx.y][threadIdx.x];
+		if(threadIdx.x==0)
+			acc += A[row*rowN + col-1];
+		else
+			acc += aTile[threadIdx.y][threadIdx.x-1];
+		if(threadIdx.x==blockDim.x)
+			acc += A[row*rowN + col+1];
+		else
+			acc += aTile[threadIdx.y][threadIdx.x+1];
+		if(threadIdx.y==0)
+			acc += A[(row-1)*rowN + col];
+		else
+			acc += aTile[threadIdx.y-1][threadIdx.x];
+		if(threadIdx.y==blockDim.y)
+			acc += A[(row+1)*rowN + col];
+		else
+			acc += aTile[threadIdx.y+1][threadIdx.x];
+		acc*0.2;
 	}
+	B[row*rowN+col] = (float) acc;
 }

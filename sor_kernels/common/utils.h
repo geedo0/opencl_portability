@@ -32,6 +32,7 @@ typedef union {
   data_t d[VSIZE];
 } pack_t;
 
+struct timespec diff(struct timespec start, struct timespec end);
 uint64_t get_execution_time();
 void print_metrics(int N, uint64_t run_time);
 char* getKernelSource(char *filename);

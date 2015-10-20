@@ -7,8 +7,10 @@
 
 #define GIG 1000000000
 
-#define N       1682
-#define ITERS   10
+#define N       10000
+#define ITERS   3
+
+#define IDEAL_BLOCK 4
 
 #define TOL 0.00001
 #define OMEGA 1.94
@@ -19,9 +21,6 @@
 /*****************************************************************************/
 main(int argc, char *argv[])
 {
-  struct timespec diff(struct timespec start, struct timespec end);
-  struct timespec time1, time2;
-  struct timespec time_delta;
   long int execution_times[9];
   int *iterations;
   void SOR(vec_ptr v, int *iterations);
@@ -29,64 +28,34 @@ main(int argc, char *argv[])
 
   long int i, j;
   long int block_size;
-  long int acc;
+  uint64_t acc;
   long int MAXSIZE = N;
 
   // declare and initialize the vector structure
   vec_ptr v0 = new_vec(MAXSIZE);
   iterations = (int *) malloc(sizeof(int));
 
-  //Get un-blocked SOR data
-  acc=0;
-  for(j=0; j<ITERS; j++) {
-    fprintf(stderr, "\n(%d)",j);
-    init_vector_rand(v0, MAXSIZE);
-    set_vec_length(v0, MAXSIZE);
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1);
-    SOR(v0, iterations);
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2);
-    time_delta = diff(time1,time2);
-    acc += (long int) (GIG * time_delta.tv_sec + time_delta.tv_nsec);
-  }
-  execution_times[0] = acc / ITERS + 0.5;
-
-  //Get blocked data
-  for(i=1; i<=8; i++) {
+  //Get blocked SOR data
+  for(i=10000; i<=N; i+=1000) {
+    //long int this_size = i - ((i-2)%IDEAL_BLOCK);
+    long int this_size = i;
     acc=0;
     for(j=0; j<ITERS; j++) {
-      fprintf(stderr, "\n(%d,%d)",i,j);
-      init_vector_rand(v0, MAXSIZE);
-      set_vec_length(v0, MAXSIZE);
-      block_size = i*2;
-      clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time1);
-      SOR_blocked(v0, iterations, block_size);
-      clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &time2);
-      time_delta = diff(time1,time2);
-      acc += (long int) (GIG * time_delta.tv_sec + time_delta.tv_nsec);
+      fprintf(stderr, "\n(%d %d)", this_size, j);
+      init_vector_rand(v0, this_size);
+      set_vec_length(v0, this_size);
+      tick();
+      SOR(v0, iterations);
+      //SOR_blocked(v0, iterations, IDEAL_BLOCK);
+      tock();
+      acc += get_execution_time();
     }
-    execution_times[i] = acc / ITERS + 0.5;
-  }
-
-  for(i=0; i<=8; i++) {
-    block_size = i==0 ? 1 : i*2;
-    printf("%d, %ld\n", block_size, execution_times[i]);
+    //length, time(ns)
+    printf("%d, %lld\n", this_size, acc/ ITERS + 0.5);
   }
 
   printf("\n");
   
-}
-
-struct timespec diff(struct timespec start, struct timespec end)
-{
-  struct timespec temp;
-  if ((end.tv_nsec-start.tv_nsec)<0) {
-    temp.tv_sec = end.tv_sec-start.tv_sec-1;
-    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-  } else {
-    temp.tv_sec = end.tv_sec-start.tv_sec;
-    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-  }
-  return temp;
 }
 
 /* SOR */
@@ -123,7 +92,7 @@ void SOR(vec_ptr v, int *iterations)
    *iterations = iters;
 }
 
-/* SOR w/ blocking */
+//Requires that (length-2) is divisible by the block size
 void SOR_blocked(vec_ptr v, int *iterations, int b)
 {
   long int i, j, ii, jj;
