@@ -8,7 +8,7 @@
 #define GIG 1000000000
 
 #define N       10000
-#define ITERS   3
+#define ITERS   10
 
 #define IDEAL_BLOCK 4
 
@@ -21,7 +21,6 @@
 /*****************************************************************************/
 main(int argc, char *argv[])
 {
-  long int execution_times[9];
   int *iterations;
   void SOR(vec_ptr v, int *iterations);
   void SOR_blocked(vec_ptr v, int *iterations, int b);
@@ -36,7 +35,7 @@ main(int argc, char *argv[])
   iterations = (int *) malloc(sizeof(int));
 
   //Get blocked SOR data
-  for(i=10000; i<=N; i+=1000) {
+  for(i=1000; i<=N; i+=1000) {
     //long int this_size = i - ((i-2)%IDEAL_BLOCK);
     long int this_size = i;
     acc=0;

@@ -232,9 +232,9 @@ int main(int argc,char **argv) {
     size_t local[2] = {54,54};
     printf("length, time (ns)\n");
     for(ii=100; ii<=16000; ii+=100) {
-		jj = ii - (ii%54);
-		global[0] = jj;
-		global[1] = jj;
+		int this_size = ii - (ii%54);
+		global[0] = this_size;
+		global[1] = this_size;
 		
 		tick();
 		err =  clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_input_image);
@@ -257,7 +257,8 @@ int main(int argc,char **argv) {
 			sizeof(uint16_t) * numElements, output_image,
 			0, NULL, NULL);
 			checkError(err, "Reading back image");
-		printf("%d, %lld\n",jj, get_execution_time());
+      //Size, execution time
+		printf("%d, %lld\n",this_size; get_execution_time());
     }
 
 //--------------------------------------------------------------------------------

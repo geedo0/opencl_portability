@@ -113,10 +113,10 @@ int main(int argc,char **argv) {
   }
 
   // Create the compute kernel from the program
-  kernel_a = clCreateKernel(program, "sor_shared_mem", &err);
+  kernel_a = clCreateKernel(program, "sor", &err);
   checkError(err, "Creating kernel_a from sor.cl");
   
-  kernel_b = clCreateKernel(program, "sor_shared_mem", &err);
+  kernel_b = clCreateKernel(program, "sor", &err);
   checkError(err, "Creating kernel_b from sor.cl");
 
   int arrLen = N;
@@ -134,18 +134,27 @@ int main(int argc,char **argv) {
   checkError(err, "Setting kernel_b args");
 
   printf("\n===== OpenCL Convolution ======\n");
+  
+/*
+  for(ii=0;ii<10;ii++) {
+    for(jj=0;jj<10;jj++) {
+      printf("%.2f, ",array_A[ii*arrLen+jj]);
+    }
+    printf("\n");
+  }
+*/
 
   size_t global[2];
   size_t local[2];
-  for(ii=1000; ii<=10000; ii+=1000) {
-    int this_block = 7;
-    int this_size = (ii-2) - ((ii-2)%this_block);
 
+  for(ii=0; ii<9; ii++) {
+    int this_size = 1000 + 1000*ii;
+    this_size = this_size - (this_size%32);
     fprintf(stderr, "size %d\n", this_size);
     global[0] = this_size;
     global[1] = this_size;
-    local[0] = this_block;
-    local[1] = this_block;
+    local[0] = 32;
+    local[1] = 32;
     
     uint64_t acc = 0;
     for(kk=0; kk < 10; kk++) {
@@ -177,6 +186,17 @@ int main(int argc,char **argv) {
     sizeof(float) * numElements, array_A,
     0, NULL, NULL);
   checkError(err, "Reading back image");
+
+
+/*
+  printf("\nResults\n");
+  for(ii=0;ii<10;ii++) {
+    for(jj=0;jj<10;jj++) {
+      printf("%.2f, ",array_A[ii*arrLen+jj]);
+    }
+    printf("\n");
+  }
+*/
 
   //--------------------------------------------------------------------------------
   // Clean up!

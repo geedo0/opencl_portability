@@ -207,9 +207,6 @@ int main(int argc,char **argv) {
     convolve_image(input, image_kernel, output);
     tock();
 
-    for(ii=0; ii<10; ii++)
-      printf("%d, ",output_image[ii]);
-    printf("\n");
     print_metrics(N, get_execution_time());
 
 
