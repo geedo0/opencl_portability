@@ -1,0 +1,7 @@
+convolve
+convolve_image
+conv/*
+conv_emulated/*
+conv_profiled/*
+*.aoco
+*.aocx
